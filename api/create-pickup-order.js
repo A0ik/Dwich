@@ -1,6 +1,6 @@
 /**
  * API Route: POST /api/create-pickup-order
- * Commande sur place - Email + WhatsApp via Brevo
+ * Commande sur place OU livraison paiement espèces
  */
 
 export default async function handler(req, res) {
@@ -9,12 +9,22 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { items, customerInfo, orderType, totalAmount } = req.body;
+    const { items, customerInfo, orderType, paymentMethod, totalAmount } = req.body;
     const orderId = generateOrderId();
     
-    const orderData = { orderId, items, customerInfo, orderType, totalAmount, createdAt: new Date().toISOString() };
+    // orderType: 'pickup' ou 'delivery'
+    // paymentMethod: 'cash' (espèces) ou 'on_site' (sur place)
+    const orderData = { 
+      orderId, 
+      items, 
+      customerInfo, 
+      orderType, 
+      paymentMethod: paymentMethod || 'on_site',
+      totalAmount, 
+      createdAt: new Date().toISOString() 
+    };
 
-    console.log('📝 New pickup order:', orderId);
+    console.log('📝 New order:', orderId, '| Type:', orderType, '| Payment:', orderData.paymentMethod);
 
     // WhatsApp
     try { await sendWhatsAppNotification(orderData); console.log('✅ WhatsApp sent'); } 
@@ -66,18 +76,22 @@ async function sendWhatsAppNotification(order) {
 
   const total = (order.totalAmount / 100).toFixed(2);
   const products = order.items.map(i => `• ${i.quantity}x ${i.name}${i.description ? `\n   → ${i.description}` : ''}`).join('\n');
+  
+  const isDelivery = order.orderType === 'delivery';
+  const isCash = order.paymentMethod === 'cash';
 
-  const message = `🏪 *COMMANDE SUR PLACE*
+  const message = `${isDelivery ? '🚚' : '🏪'} *${isDelivery ? 'LIVRAISON' : 'SUR PLACE'}*${isCash ? ' - ESPÈCES' : ''}
 
 ━━━━━━━━━━━━━━━━━━━
 📋 *#${order.orderId}*
 💰 *${total}€*
-💵 *PAIEMENT AU RETRAIT*
+${isCash ? '💵 *À ENCAISSER PAR LE LIVREUR*' : '💵 *À ENCAISSER SUR PLACE*'}
 ━━━━━━━━━━━━━━━━━━━
 
 👤 ${order.customerInfo.firstName} ${order.customerInfo.lastName}
 📞 ${order.customerInfo.phone}
 📧 ${order.customerInfo.email}
+${isDelivery ? `\n🏠 *Adresse:* ${order.customerInfo.address}, ${order.customerInfo.postalCode} ${order.customerInfo.city}` : ''}
 
 ━━━━━━━━━━━━━━━━━━━
 ${products}
@@ -101,6 +115,9 @@ async function sendEmailToCustomer(order) {
   if (!email) return;
 
   const total = (order.totalAmount / 100).toFixed(2);
+  const isDelivery = order.orderType === 'delivery';
+  const isCash = order.paymentMethod === 'cash';
+  
   const products = order.items.map(i => `
     <tr>
       <td style="padding: 15px; border-bottom: 1px solid #e5e7eb;"><strong>${i.name}</strong>${i.description ? `<br><span style="color: #6b7280; font-size: 13px;">→ ${i.description}</span>` : ''}</td>
@@ -109,66 +126,98 @@ async function sendEmailToCustomer(order) {
     </tr>
   `).join('');
 
+  const headerColor = isDelivery ? (isCash ? '#f59e0b' : '#10b981') : '#f59e0b';
+  const headerEmoji = isDelivery ? '🚚' : '🏪';
+  const modeText = isDelivery ? 'Livraison' : 'Sur place';
+  const paymentText = isCash ? '💵 Paiement en espèces au livreur' : '💵 Paiement au retrait';
+
   const html = `
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="margin: 0; padding: 0; background: #f3f4f6; font-family: Arial, sans-serif;">
   <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-    <div style="background: linear-gradient(135deg, #f59e0b, #d97706); border-radius: 16px 16px 0 0; padding: 40px; text-align: center;">
-      <div style="font-size: 48px;">🍔</div>
+    <div style="background: linear-gradient(135deg, ${headerColor}, ${headerColor}dd); border-radius: 16px 16px 0 0; padding: 40px; text-align: center;">
+      <div style="font-size: 48px;">${headerEmoji}</div>
       <h1 style="color: white; margin: 10px 0 0 0;">DWICH62</h1>
       <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0;">Commande confirmée !</p>
     </div>
     <div style="background: white; padding: 40px; border-radius: 0 0 16px 16px;">
-      <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 16px; padding: 25px; text-align: center; margin-bottom: 30px;">
-        <p style="margin: 0; color: #92400e;">Numéro de commande</p>
-        <p style="margin: 8px 0 0 0; color: #d97706; font-size: 42px; font-weight: bold;">#${order.orderId}</p>
+      <div style="background: ${headerColor}15; border: 2px solid ${headerColor}; border-radius: 16px; padding: 25px; text-align: center; margin-bottom: 30px;">
+        <p style="margin: 0; color: #666;">Numéro de commande</p>
+        <p style="margin: 8px 0 0 0; color: ${headerColor}; font-size: 42px; font-weight: bold;">#${order.orderId}</p>
       </div>
-      <div style="background: #dbeafe; border-radius: 12px; padding: 15px; text-align: center; margin-bottom: 25px;">
-        <p style="margin: 0; color: #1e40af; font-weight: bold;">🏪 RETRAIT SUR PLACE</p>
-        <p style="margin: 5px 0 0 0; color: #1e3a8a;">Paiement au retrait • Prêt dans 15-20 min</p>
+      
+      <div style="background: #fef3c7; border-radius: 12px; padding: 15px; text-align: center; margin-bottom: 25px;">
+        <p style="margin: 0; color: #92400e; font-weight: bold;">${headerEmoji} ${modeText.toUpperCase()}</p>
+        <p style="margin: 5px 0 0 0; color: #78350f;">${paymentText}</p>
       </div>
+      
       <p style="color: #374151;">Bonjour <strong>${order.customerInfo.firstName}</strong>, merci pour votre commande !</p>
-      <h2 style="border-bottom: 3px solid #f59e0b; padding-bottom: 10px;">📋 Votre commande</h2>
+      <p style="color: #374151;">${isDelivery ? '🚚 Livraison estimée : <strong>30-45 minutes</strong>' : '🏪 Prête dans <strong>15-20 minutes</strong>'}</p>
+      
+      <h2 style="border-bottom: 3px solid ${headerColor}; padding-bottom: 10px;">📋 Votre commande</h2>
       <table style="width: 100%; border-collapse: collapse;">
         <thead><tr style="background: #f9fafb;"><th style="padding: 12px; text-align: left;">Produit</th><th style="padding: 12px; text-align: center;">Qté</th><th style="padding: 12px; text-align: right;">Prix</th></tr></thead>
         <tbody>${products}</tbody>
       </table>
+      
       <div style="background: #f9fafb; border-radius: 12px; padding: 20px; margin: 20px 0;">
-        <p style="margin: 0; font-size: 20px; font-weight: bold;">Total à payer: <span style="float: right; color: #f59e0b;">${total}€</span></p>
+        ${isDelivery ? '<p style="margin: 0 0 10px 0; color: #6b7280;">Livraison: <span style="float: right;">5,00€</span></p>' : ''}
+        <p style="margin: 0; font-size: 20px; font-weight: bold;">Total à payer: <span style="float: right; color: ${headerColor};">${total}€</span></p>
       </div>
-      <div style="background: #f0fdf4; border-radius: 12px; padding: 20px; text-align: center;">
-        <h3 style="margin: 0 0 10px 0; color: #166534;">📍 Adresse</h3>
+      
+      ${isDelivery ? `
+      <div style="background: #fef3c7; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 10px 0; color: #92400e;">🏠 Adresse de livraison</h3>
+        <p style="margin: 0; color: #78350f;">${order.customerInfo.address}<br>${order.customerInfo.postalCode} ${order.customerInfo.city}</p>
+      </div>
+      ` : `
+      <div style="background: #f0fdf4; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 10px 0; color: #166534;">📍 Adresse du restaurant</h3>
         <p style="margin: 0; color: #15803d;"><strong>135 Ter Rue Jules Guesde, 62800 Liévin</strong></p>
-        <p style="margin: 10px 0 0 0; color: #166534;">📞 07 67 46 95 02</p>
       </div>
-      ${order.customerInfo.notes ? `<div style="background: #f3f4f6; border-radius: 12px; padding: 15px; margin-top: 20px;"><p style="margin: 0;">📝 <strong>Vos notes:</strong> ${order.customerInfo.notes}</p></div>` : ''}
+      `}
+      
+      ${order.customerInfo.notes ? `<div style="background: #f3f4f6; border-radius: 12px; padding: 15px; margin-bottom: 20px;"><p style="margin: 0;">📝 <strong>Vos notes:</strong> ${order.customerInfo.notes}</p></div>` : ''}
+      
+      <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+        <p style="color: #6b7280; margin: 0 0 15px 0;">Une question ?</p>
+        <a href="tel:0767469502" style="display: inline-block; background: ${headerColor}; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">📞 07 67 46 95 02</a>
+      </div>
     </div>
     <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;"><p style="margin: 0;">© ${new Date().getFullYear()} DWICH62</p></div>
   </div>
 </body>
 </html>`;
 
-  return sendEmailViaBREVO(email, `✅ Commande #${order.orderId} - Retrait sur place - DWICH62`, html, `${order.customerInfo.firstName} ${order.customerInfo.lastName}`);
+  const subjectEmoji = isDelivery ? '🚚' : '🏪';
+  return sendEmailViaBREVO(email, `${subjectEmoji} Commande #${order.orderId} - ${modeText} - DWICH62`, html, `${order.customerInfo.firstName} ${order.customerInfo.lastName}`);
 }
 
 // ============ EMAIL RESTAURANT ============
 async function sendEmailToRestaurant(order) {
   const restaurantEmail = process.env.RESTAURANT_EMAIL || 'dwich62bruay@gmail.com';
   const total = (order.totalAmount / 100).toFixed(2);
+  const isDelivery = order.orderType === 'delivery';
+  const isCash = order.paymentMethod === 'cash';
+  
   const products = order.items.map(i => `<tr><td style="padding: 12px; border-bottom: 1px solid #ddd;"><strong>${i.quantity}x ${i.name}</strong></td><td style="padding: 12px; border-bottom: 1px solid #ddd;">${i.description || '-'}</td><td style="padding: 12px; border-bottom: 1px solid #ddd; text-align: right;">${(i.unitPrice * i.quantity / 100).toFixed(2)}€</td></tr>`).join('');
+
+  const headerColor = isDelivery ? '#dc2626' : '#f59e0b';
+  const headerText = isDelivery ? '🚚 LIVRAISON' : '🏪 SUR PLACE';
+  const paymentBadge = isCash ? '💵 ENCAISSER LIVREUR' : '💵 ENCAISSER SUR PLACE';
 
   const html = `
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="margin: 0; padding: 20px; background: #f5f5f5; font-family: Arial;">
   <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden;">
-    <div style="background: #f59e0b; padding: 20px; text-align: center;"><h1 style="color: white; margin: 0;">🏪 COMMANDE SUR PLACE</h1></div>
-    <div style="background: #fef3c7; padding: 20px; text-align: center; border-bottom: 3px solid #f59e0b;">
+    <div style="background: ${headerColor}; padding: 20px; text-align: center;"><h1 style="color: white; margin: 0;">${headerText}</h1></div>
+    <div style="background: ${headerColor}15; padding: 20px; text-align: center; border-bottom: 3px solid ${headerColor};">
       <p style="margin: 0; color: #666;">Commande</p>
-      <p style="margin: 5px 0; color: #d97706; font-size: 36px; font-weight: bold;">#${order.orderId}</p>
+      <p style="margin: 5px 0; color: ${headerColor}; font-size: 36px; font-weight: bold;">#${order.orderId}</p>
       <p style="margin: 10px 0; font-size: 24px; font-weight: bold; color: #16a34a;">${total}€</p>
-      <p style="margin: 0; background: #dc2626; color: white; display: inline-block; padding: 5px 15px; border-radius: 20px; font-weight: bold;">💵 À ENCAISSER</p>
+      <p style="margin: 0; background: #dc2626; color: white; display: inline-block; padding: 5px 15px; border-radius: 20px; font-weight: bold;">${paymentBadge}</p>
     </div>
     <div style="padding: 20px; background: #f9f9f9;">
       <h2 style="margin: 0 0 15px 0;">👤 CLIENT</h2>
@@ -176,12 +225,21 @@ async function sendEmailToRestaurant(order) {
       <p style="margin: 5px 0;"><strong>Tél:</strong> <a href="tel:${order.customerInfo.phone}" style="color: #dc2626;">${order.customerInfo.phone}</a></p>
       <p style="margin: 5px 0;"><strong>Email:</strong> ${order.customerInfo.email}</p>
     </div>
+    ${isDelivery ? `
+    <div style="padding: 20px; background: #fef3c7; border-left: 4px solid #f59e0b;">
+      <h2 style="margin: 0 0 10px 0;">🏠 ADRESSE LIVRAISON</h2>
+      <p style="margin: 0; font-size: 16px; font-weight: bold;">${order.customerInfo.address}<br>${order.customerInfo.postalCode} ${order.customerInfo.city}</p>
+    </div>
+    ` : ''}
     <div style="padding: 20px;">
       <h2 style="margin: 0 0 15px 0;">🍔 COMMANDE</h2>
       <table style="width: 100%; border-collapse: collapse;">
         <thead><tr style="background: #f3f4f6;"><th style="padding: 12px; text-align: left;">Produit</th><th style="padding: 12px; text-align: left;">Options</th><th style="padding: 12px; text-align: right;">Prix</th></tr></thead>
         <tbody>${products}</tbody>
-        <tfoot><tr style="background: #f59e0b; color: white;"><td colspan="2" style="padding: 15px; font-size: 18px; font-weight: bold;">TOTAL À ENCAISSER</td><td style="padding: 15px; text-align: right; font-size: 24px; font-weight: bold;">${total}€</td></tr></tfoot>
+        <tfoot>
+          ${isDelivery ? '<tr><td colspan="2" style="padding: 12px; text-align: right;">Livraison:</td><td style="padding: 12px; text-align: right;">5,00€</td></tr>' : ''}
+          <tr style="background: ${headerColor}; color: white;"><td colspan="2" style="padding: 15px; font-size: 18px; font-weight: bold;">TOTAL À ENCAISSER</td><td style="padding: 15px; text-align: right; font-size: 24px; font-weight: bold;">${total}€</td></tr>
+        </tfoot>
       </table>
     </div>
     ${order.customerInfo.notes ? `<div style="padding: 20px; background: #fef3c7;"><h3 style="margin: 0 0 10px 0;">📝 NOTES</h3><p style="margin: 0; font-weight: bold;">${order.customerInfo.notes}</p></div>` : ''}
@@ -190,5 +248,7 @@ async function sendEmailToRestaurant(order) {
 </body>
 </html>`;
 
-  return sendEmailViaBREVO(restaurantEmail, `🏪 SUR PLACE #${order.orderId} - ${total}€ - À ENCAISSER`, html, 'DWICH62');
+  const subjectEmoji = isDelivery ? '🚚' : '🏪';
+  const subjectMode = isDelivery ? 'LIVRAISON' : 'SUR PLACE';
+  return sendEmailViaBREVO(restaurantEmail, `${subjectEmoji} ${subjectMode} #${order.orderId} - ${total}€ - À ENCAISSER`, html, 'DWICH62');
 }

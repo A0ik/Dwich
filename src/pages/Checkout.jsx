@@ -17,6 +17,7 @@ export default function Checkout() {
   const { items, totalPrice, clearCart, openCart } = useCart();
   const toast = useToast();
   const [orderType, setOrderType] = useState('delivery');
+  const [paymentMethod, setPaymentMethod] = useState('card'); // 'card' ou 'cash'
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(null);
   const [formData, setFormData] = useState({
@@ -184,6 +185,64 @@ export default function Checkout() {
       setIsSubmitting(false);
     }
   };
+
+  // Commande livraison avec paiement en espèces
+  const handleCashDelivery = async (e) => {
+    e.preventDefault();
+    if (!isFormValid) return;
+    setIsSubmitting(true);
+    
+    try {
+      const response = await fetch('/api/create-pickup-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: items.map(item => ({
+            name: item.productName,
+            description: formatSelectedOptions(item.selectedOptions, item.optionGroups),
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+          })),
+          customerInfo: formData,
+          orderType: 'delivery',
+          paymentMethod: 'cash',
+          totalAmount: finalTotal,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      setOrderSuccess({
+        id: data.orderId,
+        orderType: 'delivery',
+        total: finalTotal,
+        paymentMethod: 'cash',
+        customer: formData,
+      });
+      clearCart();
+      
+    } catch (error) {
+      console.error('Erreur commande:', error);
+      toast.error('Erreur lors de la commande. Veuillez réessayer.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Fonction pour gérer la soumission selon le mode
+  const handleSubmit = (e) => {
+    if (orderType === 'pickup') {
+      return handlePickupOrder(e);
+    } else if (orderType === 'delivery' && paymentMethod === 'cash') {
+      return handleCashDelivery(e);
+    } else {
+      return handleStripePayment(e);
+    }
+  };
   
   if (items.length === 0 && !orderSuccess && !stripeSuccess) {
     return (
@@ -210,15 +269,16 @@ export default function Checkout() {
             ticketId={orderSuccess.id}
             amount={orderSuccess.total}
             date={new Date()}
-            cardHolder={orderSuccess.customer ? `${orderSuccess.customer.firstName} ${orderSuccess.customer.lastName}` : 'Client'}
+            cardHolder={orderSuccess.customer ? `${orderSuccess.customer.firstName} ${orderSuccess.customer.lastName}` : (orderSuccess.customerName || 'Client')}
             last4Digits="****"
             orderType={orderSuccess.orderType}
+            paymentMethod={orderSuccess.paymentMethod}
           />
           <div className="max-w-sm mx-auto mt-8 space-y-4">
             <div className="bg-white/5 rounded-2xl p-4 text-center">
               <div className="flex items-center justify-center gap-2 text-white/60 text-sm">
                 <Clock className="w-4 h-4" />
-                <span>Temps estimé: <strong className="text-white">25-35 min</strong></span>
+                <span>Temps estimé: <strong className="text-white">{orderSuccess.orderType === 'delivery' ? '30-45 min' : '15-20 min'}</strong></span>
               </div>
             </div>
             <div className="flex gap-4">
@@ -242,7 +302,7 @@ export default function Checkout() {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-8">Finaliser la commande</h1>
             
-            <form onSubmit={orderType === 'delivery' ? handleStripePayment : handlePickupOrder} className="space-y-8">
+            <form onSubmit={handleSubmit} className="space-y-8">
               <div>
                 <h2 className="text-lg font-semibold text-white mb-4">Mode de commande</h2>
                 <div className="grid grid-cols-2 gap-4">
@@ -252,7 +312,6 @@ export default function Checkout() {
                       <Truck className={`w-5 h-5 ${orderType === 'delivery' ? 'text-emerald-400' : 'text-white/50'}`} />
                       <span className={orderType === 'delivery' ? 'text-white font-medium' : 'text-white/70'}>Livraison</span>
                     </div>
-                    <div className="flex items-center gap-2"><Lock className="w-3 h-3 text-emerald-400" /><span className="text-xs text-emerald-400">Paiement par carte</span></div>
                     <span className="text-xs text-white/40">+{formatPrice(DELIVERY_FEE)}</span>
                   </motion.button>
                   
@@ -263,7 +322,6 @@ export default function Checkout() {
                       <span className={orderType === 'pickup' ? 'text-white font-medium' : 'text-white/70'}>Sur place</span>
                     </div>
                     <div className="flex items-center gap-2"><Banknote className="w-3 h-3 text-amber-400" /><span className="text-xs text-amber-400">Paiement au retrait</span></div>
-                    <span className="text-xs text-white/40">Pas de frais</span>
                   </motion.button>
                 </div>
                 
@@ -283,6 +341,34 @@ export default function Checkout() {
                   </motion.div>
                 )}
               </div>
+              
+              {/* Choix du mode de paiement pour la livraison */}
+              <AnimatePresence>
+                {orderType === 'delivery' && isMinimumReached && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+                    <h2 className="text-lg font-semibold text-white mb-4">Mode de paiement</h2>
+                    <div className="grid grid-cols-2 gap-4">
+                      <motion.button type="button" whileTap={{ scale: 0.98 }} onClick={() => setPaymentMethod('card')}
+                        className={`p-4 rounded-xl border-2 transition-all flex flex-col items-start gap-2 ${paymentMethod === 'card' ? 'border-emerald-500 bg-emerald-500/10' : 'border-white/10 bg-white/5 hover:border-white/20'}`}>
+                        <div className="flex items-center gap-2">
+                          <CreditCard className={`w-5 h-5 ${paymentMethod === 'card' ? 'text-emerald-400' : 'text-white/50'}`} />
+                          <span className={paymentMethod === 'card' ? 'text-white font-medium' : 'text-white/70'}>Carte bancaire</span>
+                        </div>
+                        <div className="flex items-center gap-2"><Lock className="w-3 h-3 text-emerald-400" /><span className="text-xs text-emerald-400">Paiement sécurisé</span></div>
+                      </motion.button>
+                      
+                      <motion.button type="button" whileTap={{ scale: 0.98 }} onClick={() => setPaymentMethod('cash')}
+                        className={`p-4 rounded-xl border-2 transition-all flex flex-col items-start gap-2 ${paymentMethod === 'cash' ? 'border-amber-500 bg-amber-500/10' : 'border-white/10 bg-white/5 hover:border-white/20'}`}>
+                        <div className="flex items-center gap-2">
+                          <Banknote className={`w-5 h-5 ${paymentMethod === 'cash' ? 'text-amber-400' : 'text-white/50'}`} />
+                          <span className={paymentMethod === 'cash' ? 'text-white font-medium' : 'text-white/70'}>Espèces</span>
+                        </div>
+                        <div className="flex items-center gap-2"><Truck className="w-3 h-3 text-amber-400" /><span className="text-xs text-amber-400">Payer au livreur</span></div>
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               
               <div>
                 <h2 className="text-lg font-semibold text-white mb-4">Vos informations</h2>
@@ -314,19 +400,31 @@ export default function Checkout() {
                 <textarea name="notes" placeholder="Instructions spéciales, allergies..." value={formData.notes} onChange={handleInputChange} rows={3} className="input resize-none" />
               </div>
               
-              <div className={`rounded-xl p-4 border ${orderType === 'delivery' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-amber-500/10 border-amber-500/20'}`}>
+              <div className={`rounded-xl p-4 border ${
+                orderType === 'pickup' ? 'bg-amber-500/10 border-amber-500/20' :
+                paymentMethod === 'card' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-amber-500/10 border-amber-500/20'
+              }`}>
                 <div className="flex items-start gap-3">
-                  {orderType === 'delivery' ? (
+                  {orderType === 'pickup' ? (
+                    <><Banknote className="w-5 h-5 text-amber-400 mt-0.5" /><div><h3 className="font-semibold text-white mb-1">Paiement sur place</h3><p className="text-white/60 text-sm">Payez en espèces ou par carte au retrait.</p></div></>
+                  ) : paymentMethod === 'card' ? (
                     <><CreditCard className="w-5 h-5 text-emerald-400 mt-0.5" /><div><h3 className="font-semibold text-white mb-1">Paiement sécurisé par carte</h3><p className="text-white/60 text-sm">Vous serez redirigé vers Stripe pour finaliser le paiement.</p></div></>
                   ) : (
-                    <><Banknote className="w-5 h-5 text-amber-400 mt-0.5" /><div><h3 className="font-semibold text-white mb-1">Paiement sur place</h3><p className="text-white/60 text-sm">Payez en espèces ou par carte au retrait.</p></div></>
+                    <><Banknote className="w-5 h-5 text-amber-400 mt-0.5" /><div><h3 className="font-semibold text-white mb-1">Paiement en espèces</h3><p className="text-white/60 text-sm">Vous payerez le livreur à la réception de votre commande.</p></div></>
                   )}
                 </div>
               </div>
               
               <motion.button type="submit" disabled={isSubmitting || !isFormValid} whileHover={{ scale: (isSubmitting || !isFormValid) ? 1 : 1.02 }} whileTap={{ scale: (isSubmitting || !isFormValid) ? 1 : 0.98 }}
-                className={`lg:hidden w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${orderType === 'delivery' ? 'bg-gradient-emerald text-white shadow-emerald-500/30' : 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-500/30'}`}>
-                {isSubmitting ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full" /> : orderType === 'delivery' ? <><Lock className="w-5 h-5" /><span>Payer {formatPrice(finalTotal)}</span></> : <><Store className="w-5 h-5" /><span>Valider • {formatPrice(finalTotal)}</span></>}
+                className={`lg:hidden w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                  orderType === 'pickup' ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-500/30' :
+                  paymentMethod === 'card' ? 'bg-gradient-emerald text-white shadow-emerald-500/30' : 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-500/30'
+                }`}>
+                {isSubmitting ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full" /> : 
+                  orderType === 'pickup' ? <><Store className="w-5 h-5" /><span>Valider • {formatPrice(finalTotal)}</span></> :
+                  paymentMethod === 'card' ? <><Lock className="w-5 h-5" /><span>Payer {formatPrice(finalTotal)}</span></> :
+                  <><Truck className="w-5 h-5" /><span>Commander • {formatPrice(finalTotal)}</span></>
+                }
               </motion.button>
             </form>
           </motion.div>
@@ -352,9 +450,16 @@ export default function Checkout() {
                 <div className="flex items-center justify-between pt-3 border-t border-white/10"><span className="font-semibold text-white">Total</span><span className="text-2xl font-bold text-emerald-400">{formatPrice(finalTotal)}</span></div>
               </div>
               <motion.button type="submit" form="checkout-form" disabled={isSubmitting || !isFormValid} whileHover={{ scale: (isSubmitting || !isFormValid) ? 1 : 1.02 }} whileTap={{ scale: (isSubmitting || !isFormValid) ? 1 : 0.98 }}
-                onClick={orderType === 'delivery' ? handleStripePayment : handlePickupOrder}
-                className={`hidden lg:flex w-full mt-6 py-4 rounded-2xl font-bold text-lg items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${orderType === 'delivery' ? 'bg-gradient-emerald text-white shadow-emerald-500/30' : 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-500/30'}`}>
-                {isSubmitting ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full" /> : orderType === 'delivery' ? <><Lock className="w-5 h-5" /><span>Payer par carte</span></> : <><Store className="w-5 h-5" /><span>Valider la commande</span></>}
+                onClick={handleSubmit}
+                className={`hidden lg:flex w-full mt-6 py-4 rounded-2xl font-bold text-lg items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                  orderType === 'pickup' ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-500/30' :
+                  paymentMethod === 'card' ? 'bg-gradient-emerald text-white shadow-emerald-500/30' : 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-500/30'
+                }`}>
+                {isSubmitting ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full" /> : 
+                  orderType === 'pickup' ? <><Store className="w-5 h-5" /><span>Valider la commande</span></> :
+                  paymentMethod === 'card' ? <><Lock className="w-5 h-5" /><span>Payer par carte</span></> :
+                  <><Truck className="w-5 h-5" /><span>Commander</span></>
+                }
               </motion.button>
             </div>
           </motion.div>
