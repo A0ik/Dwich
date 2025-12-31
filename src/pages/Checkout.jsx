@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { formatPrice, formatSelectedOptions, generateOrderId } from '../utils/helpers';
-import { DELIVERY_FEE } from '../utils/constants';
+import { DELIVERY_FEE, MINIMUM_DELIVERY_ORDER } from '../utils/constants';
 import TicketConfirmation from '../components/TicketConfirmation';
 import { useToast } from '../components/Toast';
 
@@ -91,6 +91,10 @@ export default function Checkout() {
   const deliveryFee = orderType === 'delivery' ? DELIVERY_FEE : 0;
   const finalTotal = totalPrice + deliveryFee;
   
+  // Vérification minimum de commande pour livraison
+  const isMinimumReached = orderType === 'pickup' || totalPrice >= MINIMUM_DELIVERY_ORDER;
+  const amountRemaining = MINIMUM_DELIVERY_ORDER - totalPrice;
+  
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -99,10 +103,10 @@ export default function Checkout() {
   const isFormValid = useMemo(() => {
     const baseValid = formData.firstName && formData.lastName && formData.email && formData.phone;
     if (orderType === 'delivery') {
-      return baseValid && formData.address && formData.city && formData.postalCode;
+      return baseValid && formData.address && formData.city && formData.postalCode && isMinimumReached;
     }
     return baseValid;
-  }, [formData, orderType]);
+  }, [formData, orderType, isMinimumReached]);
   
   const handleStripePayment = async (e) => {
     e.preventDefault();
@@ -262,6 +266,22 @@ export default function Checkout() {
                     <span className="text-xs text-white/40">Pas de frais</span>
                   </motion.button>
                 </div>
+                
+                {/* Message minimum de commande */}
+                {orderType === 'delivery' && !isMinimumReached && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }} 
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl"
+                  >
+                    <p className="text-amber-400 text-sm font-medium">
+                      ⚠️ Minimum de commande : {formatPrice(MINIMUM_DELIVERY_ORDER)} pour la livraison
+                    </p>
+                    <p className="text-amber-400/70 text-xs mt-1">
+                      Il vous manque {formatPrice(amountRemaining)} pour débloquer la livraison
+                    </p>
+                  </motion.div>
+                )}
               </div>
               
               <div>

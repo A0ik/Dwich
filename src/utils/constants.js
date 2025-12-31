@@ -15,6 +15,9 @@ export const MAP_EMBED_URL = "https://www.google.com/maps/embed?pb=!1m18!1m12!1m
 // Frais de livraison en centimes (500 = 5€)
 export const DELIVERY_FEE = 500;
 
+// Minimum de commande pour la livraison en centimes (1500 = 15€)
+export const MINIMUM_DELIVERY_ORDER = 1500;
+
 // Montant minimum pour la livraison gratuite (en centimes, null = jamais gratuit)
 export const FREE_DELIVERY_THRESHOLD = null;
 
