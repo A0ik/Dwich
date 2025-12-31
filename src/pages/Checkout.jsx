@@ -44,17 +44,48 @@ export default function Checkout() {
     setTimeout(() => openCart(), 50);
   }, [stripeCanceled, toast, navigate, openCart]);
   
+  // Si paiement réussi: récupérer les détails depuis Stripe
   useEffect(() => {
-    if (stripeSuccess && stripeSessionId) {
-      setOrderSuccess({
-        id: stripeSessionId.slice(-12).toUpperCase(),
-        orderType: 'delivery',
-        total: totalPrice + DELIVERY_FEE,
-        paymentMethod: 'stripe',
-      });
-      clearCart();
-    }
-  }, [stripeSuccess, stripeSessionId]);
+    if (!stripeSuccess || !stripeSessionId || orderSuccess) return;
+    
+    const fetchSession = async () => {
+      try {
+        const response = await fetch(`/api/get-checkout-session?session_id=${stripeSessionId}`);
+        const session = await response.json();
+        
+        if (session.error) {
+          console.error('Error fetching session:', session.error);
+          // Fallback: utiliser le session_id comme numéro de commande
+          setOrderSuccess({
+            id: stripeSessionId.slice(-8).toUpperCase(),
+            orderType: 'delivery',
+            total: 0,
+            paymentMethod: 'stripe',
+          });
+        } else {
+          setOrderSuccess({
+            id: stripeSessionId.slice(-8).toUpperCase(),
+            orderType: session.metadata?.orderType || 'delivery',
+            total: session.amount_total || 0,
+            paymentMethod: 'stripe',
+            customerName: session.metadata?.customerName,
+          });
+        }
+        clearCart();
+      } catch (error) {
+        console.error('Error:', error);
+        setOrderSuccess({
+          id: stripeSessionId.slice(-8).toUpperCase(),
+          orderType: 'delivery',
+          total: 0,
+          paymentMethod: 'stripe',
+        });
+        clearCart();
+      }
+    };
+    
+    fetchSession();
+  }, [stripeSuccess, stripeSessionId, orderSuccess, clearCart]);
 
   // Calcul du total avec frais de livraison
   const deliveryFee = orderType === 'delivery' ? DELIVERY_FEE : 0;
