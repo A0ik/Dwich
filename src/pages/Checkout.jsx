@@ -139,21 +139,46 @@ export default function Checkout() {
     e.preventDefault();
     if (!isFormValid) return;
     setIsSubmitting(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    simulateOrderSuccess('on_site');
-  };
-  
-  const simulateOrderSuccess = (paymentMethod) => {
-    const orderId = generateOrderId();
-    setOrderSuccess({
-      id: orderId,
-      orderType,
-      total: finalTotal,
-      paymentMethod,
-      customer: formData,
-    });
-    setIsSubmitting(false);
-    clearCart();
+    
+    try {
+      const response = await fetch('/api/create-pickup-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: items.map(item => ({
+            name: item.productName,
+            description: formatSelectedOptions(item.selectedOptions, item.optionGroups),
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+          })),
+          customerInfo: formData,
+          orderType: 'pickup',
+          totalAmount: finalTotal,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      // Succès - afficher le ticket
+      setOrderSuccess({
+        id: data.orderId,
+        orderType: 'pickup',
+        total: finalTotal,
+        paymentMethod: 'on_site',
+        customer: formData,
+      });
+      clearCart();
+      
+    } catch (error) {
+      console.error('Erreur commande:', error);
+      toast.error('Erreur lors de la commande. Veuillez réessayer.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
   if (items.length === 0 && !orderSuccess && !stripeSuccess) {
