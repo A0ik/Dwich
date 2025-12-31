@@ -61,6 +61,14 @@ export default async function handler(req, res) {
     } catch (error) {
       console.error('❌ Email error:', error);
     }
+
+    // Envoyer Email au restaurant
+    try {
+      await sendEmailToRestaurant(session, lineItems);
+      console.log('✅ Email sent to restaurant');
+    } catch (error) {
+      console.error('❌ Restaurant email error:', error);
+    }
   }
 
   res.status(200).json({ received: true });
@@ -324,5 +332,164 @@ async function sendEmailConfirmation(session, lineItems) {
   }
   
   console.log('Email sent:', result);
+  return result;
+}
+
+// ============ EMAIL AU RESTAURANT ============
+async function sendEmailToRestaurant(session, lineItems) {
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (!resendApiKey) {
+    console.log('RESEND_API_KEY not configured, skipping restaurant email');
+    return;
+  }
+
+  const restaurantEmail = process.env.RESTAURANT_EMAIL || 'dwich62bruay@gmail.com';
+  const meta = session.metadata || {};
+  const orderId = session.id.slice(-8).toUpperCase();
+  const total = (session.amount_total / 100).toFixed(2);
+
+  let itemsDetails = [];
+  try {
+    if (meta.itemsJson) itemsDetails = JSON.parse(meta.itemsJson);
+  } catch (e) {}
+
+  // Générer le HTML des produits
+  let productsHtml = '';
+  if (itemsDetails.length > 0) {
+    productsHtml = itemsDetails.map(item => `
+      <tr>
+        <td style="padding: 12px; border-bottom: 1px solid #ddd; font-weight: bold;">${item.qty}x ${item.name}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #ddd;">${item.options || '-'}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #ddd; text-align: right;">${(item.price * item.qty / 100).toFixed(2)}€</td>
+      </tr>
+    `).join('');
+  } else {
+    productsHtml = lineItems
+      .filter(item => item.description !== 'Livraison à domicile')
+      .map(item => `
+        <tr>
+          <td style="padding: 12px; border-bottom: 1px solid #ddd; font-weight: bold;">${item.quantity}x ${item.description || 'Produit'}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #ddd;">-</td>
+          <td style="padding: 12px; border-bottom: 1px solid #ddd; text-align: right;">${item.amount_total ? (item.amount_total / 100).toFixed(2) : '-'}€</td>
+        </tr>
+      `).join('');
+  }
+
+  const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+</head>
+<body style="margin: 0; padding: 20px; background-color: #f5f5f5; font-family: Arial, sans-serif;">
+  <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+    
+    <!-- Header rouge pour urgence -->
+    <div style="background: #dc2626; padding: 20px; text-align: center;">
+      <h1 style="color: white; margin: 0; font-size: 24px;">🚨 NOUVELLE COMMANDE</h1>
+    </div>
+    
+    <!-- Order ID -->
+    <div style="background: #fef2f2; padding: 20px; text-align: center; border-bottom: 3px solid #dc2626;">
+      <p style="margin: 0; color: #666;">Commande</p>
+      <p style="margin: 5px 0; color: #dc2626; font-size: 36px; font-weight: bold;">#${orderId}</p>
+      <p style="margin: 10px 0 0 0; font-size: 24px; font-weight: bold; color: #16a34a;">${total}€</p>
+    </div>
+    
+    <!-- Client info -->
+    <div style="padding: 20px; background: #f9f9f9;">
+      <h2 style="margin: 0 0 15px 0; color: #333; font-size: 18px;">👤 CLIENT</h2>
+      <table style="width: 100%;">
+        <tr>
+          <td style="padding: 5px 0; color: #666;">Nom:</td>
+          <td style="padding: 5px 0; font-weight: bold;">${meta.customerName || 'N/A'}</td>
+        </tr>
+        <tr>
+          <td style="padding: 5px 0; color: #666;">Téléphone:</td>
+          <td style="padding: 5px 0; font-weight: bold;"><a href="tel:${meta.customerPhone}" style="color: #dc2626;">${meta.customerPhone || 'N/A'}</a></td>
+        </tr>
+        <tr>
+          <td style="padding: 5px 0; color: #666;">Email:</td>
+          <td style="padding: 5px 0;">${session.customer_email || 'N/A'}</td>
+        </tr>
+      </table>
+    </div>
+    
+    <!-- Mode de livraison -->
+    <div style="padding: 20px; ${meta.orderType === 'delivery' ? 'background: #fef3c7; border-left: 4px solid #f59e0b;' : 'background: #dbeafe; border-left: 4px solid #3b82f6;'}">
+      <h2 style="margin: 0 0 10px 0; color: #333; font-size: 18px;">
+        ${meta.orderType === 'delivery' ? '🚚 LIVRAISON' : '🏪 SUR PLACE'}
+      </h2>
+      ${meta.orderType === 'delivery' ? `<p style="margin: 0; font-size: 16px; font-weight: bold;">${meta.customerAddress}</p>` : '<p style="margin: 0;">Le client viendra chercher sa commande</p>'}
+    </div>
+    
+    <!-- Produits -->
+    <div style="padding: 20px;">
+      <h2 style="margin: 0 0 15px 0; color: #333; font-size: 18px;">🍔 COMMANDE</h2>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="background: #f3f4f6;">
+            <th style="padding: 12px; text-align: left;">Produit</th>
+            <th style="padding: 12px; text-align: left;">Options/Sauces</th>
+            <th style="padding: 12px; text-align: right;">Prix</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${productsHtml}
+        </tbody>
+        <tfoot>
+          ${meta.orderType === 'delivery' ? `
+          <tr>
+            <td colspan="2" style="padding: 12px; text-align: right;">Livraison:</td>
+            <td style="padding: 12px; text-align: right;">5,00€</td>
+          </tr>
+          ` : ''}
+          <tr style="background: #10b981; color: white;">
+            <td colspan="2" style="padding: 15px; font-size: 18px; font-weight: bold;">TOTAL</td>
+            <td style="padding: 15px; text-align: right; font-size: 24px; font-weight: bold;">${total}€</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    
+    ${meta.notes ? `
+    <div style="padding: 20px; background: #fef3c7; border-top: 1px solid #f59e0b;">
+      <h2 style="margin: 0 0 10px 0; color: #92400e; font-size: 16px;">📝 NOTES DU CLIENT</h2>
+      <p style="margin: 0; color: #78350f; font-weight: bold;">${meta.notes}</p>
+    </div>
+    ` : ''}
+    
+    <!-- Footer -->
+    <div style="padding: 15px; background: #333; text-align: center;">
+      <p style="margin: 0; color: #999; font-size: 12px;">
+        Commande reçue le ${new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })}
+      </p>
+    </div>
+    
+  </div>
+</body>
+</html>
+  `;
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${resendApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM_EMAIL || 'DWICH62 <onboarding@resend.dev>',
+      to: [restaurantEmail],
+      subject: `🚨 COMMANDE #${orderId} - ${total}€ - ${meta.orderType === 'delivery' ? 'LIVRAISON' : 'SUR PLACE'}`,
+      html: emailHtml,
+    }),
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(`Resend error (restaurant): ${JSON.stringify(result)}`);
+  }
+  
+  console.log('Restaurant email sent:', result);
   return result;
 }
