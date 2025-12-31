@@ -44,9 +44,11 @@ export default function Header() {
               whileTap={{ scale: 0.95 }}
               className="flex items-center gap-3"
             >
-              <div className="w-12 h-12 bg-gradient-emerald rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/30">
-                <span className="text-white font-black text-lg">D62</span>
-              </div>
+              <img 
+                src="/logo.jpg" 
+                alt="Dwich 62" 
+                className="w-12 h-12 rounded-xl object-cover shadow-lg"
+              />
               <span className="font-bold text-2xl tracking-tight hidden sm:block">
                 DWICH<span className="text-emerald-400">62</span>
               </span>

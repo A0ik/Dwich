@@ -1,5 +1,23 @@
 import { SIZE_TO_MEAT_LIMIT, SIZE_GROUP_TO_MEAT_GROUP } from './constants';
 
+// Restaurant info centralisée
+export const RESTAURANT_INFO = {
+  name: 'Dwich 62',
+  address: '135 Ter Rue Jules Guesde, 62800 Liévin',
+  phone: '07 67 46 95 02',
+  email: 'dwich62bruay@gmail.com',
+  hours: {
+    lundi: '11:00-15:00 / 18:00-22:00',
+    mardi: '11:00-15:00 / 18:00-22:00',
+    mercredi: '11:00-22:00',
+    jeudi: '11:00-15:00 / 18:00-22:00',
+    vendredi: '11:00-15:00 / 18:00-22:00',
+    samedi: '11:00-15:00 / 18:00-22:00',
+    dimanche: '11:00-15:00 / 18:00-22:00',
+  },
+  googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=135+Ter+Rue+Jules+Guesde+62800+Liévin',
+};
+
 // --- Boissons ---
 // Règle métier:
 // - Une boisson ajoutée en option coûte +1,50€
