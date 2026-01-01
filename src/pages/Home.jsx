@@ -25,11 +25,11 @@ export default function Home() {
           <div className="max-w-4xl mx-auto text-center">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-2 mb-8">
               <Flame className="w-4 h-4 text-emerald-400" />
-              <span className="text-emerald-400 text-sm font-medium">Street Food Premium depuis 2015</span>
+              <span className="text-emerald-400 text-sm font-medium">Street Food Premium et Halal</span>
             </motion.div>
             
             <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1 }} className="text-5xl md:text-7xl lg:text-8xl font-black text-white leading-tight mb-6">
-              La street food{' '}<span className="text-gradient">réinventée</span>
+              Dwich{' '}<span className="text-gradient">62</span>
             </motion.h1>
             
             <motion.p initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }} className="text-xl md:text-2xl text-white/60 max-w-2xl mx-auto mb-10">
